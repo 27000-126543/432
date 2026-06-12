@@ -1,6 +1,8 @@
-import React from 'react'
+import React, { useState, useMemo } from 'react'
 import { useGameStore } from '@/store/gameStore'
 import type { Notification } from '@/types'
+
+type TabKey = 'all' | 'unread' | 'event' | 'warning' | 'error'
 
 interface NotificationCenterProps {
   isOpen: boolean
@@ -58,7 +60,24 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ isOpen, onClose
   const markNotificationRead = useGameStore((s) => s.actions.markNotificationRead)
   const markAllNotificationsRead = useGameStore((s) => s.actions.markAllNotificationsRead)
 
+  const [activeTab, setActiveTab] = useState<TabKey>('all')
+
   const unreadCount = notifications.filter((n) => !n.read).length
+
+  const filteredNotifications = useMemo(() => {
+    switch (activeTab) {
+      case 'all':
+        return notifications
+      case 'unread':
+        return notifications.filter((n) => !n.read)
+      case 'event':
+      case 'warning':
+      case 'error':
+        return notifications.filter((n) => n.type === activeTab)
+      default:
+        return notifications
+    }
+  }, [notifications, activeTab])
 
   const handleItemClick = (notification: Notification) => {
     if (!notification.read) {
@@ -127,14 +146,20 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ isOpen, onClose
                   : tab === 'unread'
                   ? unreadCount
                   : notifications.filter((n) => n.type === tab).length
+              const isActive = activeTab === tab
               return (
                 <button
                   key={tab}
-                  className="px-4 py-3 text-sm font-medium text-slate-400 hover:text-white border-b-2 border-transparent hover:border-slate-500 transition-colors whitespace-nowrap"
+                  onClick={() => setActiveTab(tab)}
+                  className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
+                    isActive
+                      ? 'text-white border-indigo-500'
+                      : 'text-slate-400 border-transparent hover:text-white hover:border-slate-500'
+                  }`}
                 >
                   {labels[tab]}
                   {count > 0 && (
-                    <span className="ml-1 text-xs text-slate-500">({count})</span>
+                    <span className={`ml-1 text-xs ${isActive ? 'text-indigo-300' : 'text-slate-500'}`}>({count})</span>
                   )}
                 </button>
               )
@@ -142,13 +167,13 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ isOpen, onClose
           </div>
 
           <div className="flex-1 overflow-y-auto p-4 space-y-3">
-            {notifications.length === 0 ? (
+            {filteredNotifications.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full text-slate-500">
                 <span className="text-5xl mb-4">📭</span>
                 <p className="text-sm">暂无通知</p>
               </div>
             ) : (
-              notifications.map((notification) => {
+              filteredNotifications.map((notification) => {
                 const config = typeConfig[notification.type]
                 return (
                   <div

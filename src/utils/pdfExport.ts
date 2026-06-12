@@ -11,6 +11,17 @@ import type {
 import { formatNumber, formatDateTime, formatPercent } from '@/utils'
 import { FACILITY_CONFIG } from '@/constants'
 
+export interface ExportOptions {
+  playerInfo: boolean
+  priceChart: boolean
+  supplyDemandChart: boolean
+  radarChart: boolean
+  summary: boolean
+  facilities: boolean
+  leaderboard: boolean
+  guild: boolean
+}
+
 export interface PDFReportData {
   player: Player
   stats: DashboardStats
@@ -27,11 +38,35 @@ export interface PDFReportData {
     supplyDemandChart?: string
     radarChart?: string
   }
+  guildInfo?: {
+    guild: { id: string; name: string; level: number; memberCount: number }
+    role: string | null
+  }
+  options?: {
+    playerInfo?: boolean
+    summary?: boolean
+    facilities?: boolean
+    priceChart?: boolean
+    supplyDemandChart?: boolean
+    radarChart?: boolean
+    leaderboard?: boolean
+    guild?: boolean
+  }
 }
 
 export const generateEnergyReport = async (
   data: PDFReportData
 ): Promise<Blob> => {
+  const opts = data.options || {
+    playerInfo: true, summary: true, facilities: true,
+    priceChart: true, supplyDemandChart: true, radarChart: true,
+    leaderboard: true, guild: true,
+  }
+  const hasAny = Object.values(opts).some(v => v === true)
+  if (!hasAny) {
+    return new Blob([''], { type: 'application/pdf' })
+  }
+
   const doc = new jsPDF('p', 'mm', 'a4')
   const pageWidth = doc.internal.pageSize.getWidth()
   const pageHeight = doc.internal.pageSize.getHeight()
@@ -52,85 +87,92 @@ export const generateEnergyReport = async (
   
   y = 45
   
-  doc.setTextColor(0, 0, 0)
-  doc.setFontSize(14)
-  doc.setFont('helvetica', 'bold')
-  doc.text('一、玩家概况', 15, y)
-  y += 8
-  
-  doc.setFontSize(10)
-  doc.setFont('helvetica', 'normal')
-  doc.text(`玩家名称: ${data.player.name}`, 15, y)
-  doc.text(`等级: Lv.${data.player.level}`, 100, y)
-  y += 6
-  doc.text(`总发电量: ${formatNumber(data.player.totalGenerated)} 魔力`, 15, y)
-  doc.text(`总交易量: ${formatNumber(data.player.totalTraded)} 笔`, 100, y)
-  y += 6
-  doc.text(`持有金币: ${formatNumber(data.player.gold)}`, 15, y)
-  doc.text(`魔力代币: ${formatNumber(data.player.manaTokens)}`, 100, y)
-  y += 10
-  
-  doc.setFontSize(14)
-  doc.setFont('helvetica', 'bold')
-  doc.text('二、全服能源概览', 15, y)
-  y += 8
-  
-  const stats = [
-    ['指标', '数值', '变化'],
-    ['总发电量', `${formatNumber(data.stats.totalGenerated)} 魔力`, ''],
-    ['总消耗量', `${formatNumber(data.stats.totalConsumed)} 魔力`, ''],
-    ['当前价格', `${formatNumber(data.stats.currentPrice)} 金币/魔力`, 
-      `${data.stats.priceChange24h >= 0 ? '+' : ''}${formatPercent(data.stats.priceChange24h)}`],
-    ['活跃设施', `${formatNumber(data.stats.activeFacilities)} 座`, ''],
-    ['在线玩家', `${formatNumber(data.stats.activePlayers)} 人`, ''],
-    ['24h交易量', `${formatNumber(data.stats.totalTrades24h)} 笔`, ''],
-    ['24h交易额', `${formatNumber(data.stats.totalVolume24h)} 金币`, ''],
-    ['电网稳定性', formatPercent(data.stats.gridStability), ''],
-    ['平均损耗率', formatPercent(data.stats.avgLossRate), ''],
-  ]
-  
-  drawTable(doc, stats, 15, y, pageWidth - 30)
-  y += (stats.length + 1) * 7 + 5
-  
-  if (y > pageHeight - 80) {
-    doc.addPage()
-    y = 15
-  }
-  
-  doc.setFontSize(14)
-  doc.setFont('helvetica', 'bold')
-  doc.text('三、设施运营状况', 15, y)
-  y += 8
-  
-  const facilityData = [
-    ['设施类型', '数量', '总输出', '平均效率', '维护成本'],
-  ]
-  
-  const facilityGroups = data.facilities.reduce((acc, f) => {
-    acc[f.type] = acc[f.type] || []
-    acc[f.type].push(f)
-    return acc
-  }, {} as Record<string, Facility[]>)
-  
-  for (const [type, facilities] of Object.entries(facilityGroups)) {
-    const config = FACILITY_CONFIG[type as keyof typeof FACILITY_CONFIG]
-    const totalOutput = facilities.reduce((s, f) => s + f.baseOutput * f.efficiency, 0)
-    const avgEfficiency = facilities.reduce((s, f) => s + f.efficiency, 0) / facilities.length
-    const totalMaintenance = facilities.reduce((s, f) => s + f.maintenanceCost, 0)
+  if (opts.playerInfo) {
+    doc.setTextColor(0, 0, 0)
+    doc.setFontSize(14)
+    doc.setFont('helvetica', 'bold')
+    doc.text('一、玩家概况', 15, y)
+    y += 8
     
-    facilityData.push([
-      config.name,
-      `${facilities.length} 座`,
-      `${formatNumber(totalOutput)} 魔力`,
-      formatPercent(avgEfficiency),
-      `${formatNumber(totalMaintenance)} 金币`,
-    ])
+    doc.setFontSize(10)
+    doc.setFont('helvetica', 'normal')
+    doc.text(`玩家名称: ${data.player.name}`, 15, y)
+    doc.text(`等级: Lv.${data.player.level}`, 100, y)
+    y += 6
+    doc.text(`总发电量: ${formatNumber(data.player.totalGenerated)} 魔力`, 15, y)
+    doc.text(`总交易量: ${formatNumber(data.player.totalTraded)} 笔`, 100, y)
+    y += 6
+    doc.text(`持有金币: ${formatNumber(data.player.gold)}`, 15, y)
+    doc.text(`魔力代币: ${formatNumber(data.player.manaTokens)}`, 100, y)
+    y += 10
   }
   
-  drawTable(doc, facilityData, 15, y, pageWidth - 30)
-  y += (facilityData.length + 1) * 7 + 5
+  if (opts.summary) {
+    if (y > pageHeight - 80) { doc.addPage(); y = 15 }
+    
+    doc.setFontSize(14)
+    doc.setFont('helvetica', 'bold')
+    doc.text('二、全服能源概览', 15, y)
+    y += 8
+    
+    const stats = [
+      ['指标', '数值', '变化'],
+      ['总发电量', `${formatNumber(data.stats.totalGenerated)} 魔力`, ''],
+      ['总消耗量', `${formatNumber(data.stats.totalConsumed)} 魔力`, ''],
+      ['当前价格', `${formatNumber(data.stats.currentPrice)} 金币/魔力`, 
+        `${data.stats.priceChange24h >= 0 ? '+' : ''}${formatPercent(data.stats.priceChange24h)}`],
+      ['活跃设施', `${formatNumber(data.stats.activeFacilities)} 座`, ''],
+      ['在线玩家', `${formatNumber(data.stats.activePlayers)} 人`, ''],
+      ['24h交易量', `${formatNumber(data.stats.totalTrades24h)} 笔`, ''],
+      ['24h交易额', `${formatNumber(data.stats.totalVolume24h)} 金币`, ''],
+      ['电网稳定性', formatPercent(data.stats.gridStability), ''],
+      ['平均损耗率', formatPercent(data.stats.avgLossRate), ''],
+    ]
+    
+    drawTable(doc, stats, 15, y, pageWidth - 30)
+    y += (stats.length + 1) * 7 + 5
+  }
   
-  if (data.charts.priceChart && y < pageHeight - 100) {
+  if (opts.facilities) {
+    if (y > pageHeight - 80) { doc.addPage(); y = 15 }
+    
+    doc.setFontSize(14)
+    doc.setFont('helvetica', 'bold')
+    doc.text('三、设施运营状况', 15, y)
+    y += 8
+    
+    const facilityData = [
+      ['设施类型', '数量', '总输出', '平均效率', '维护成本'],
+    ]
+    
+    const facilityGroups = data.facilities.reduce((acc, f) => {
+      acc[f.type] = acc[f.type] || []
+      acc[f.type].push(f)
+      return acc
+    }, {} as Record<string, Facility[]>)
+    
+    for (const [type, facilities] of Object.entries(facilityGroups)) {
+      const config = FACILITY_CONFIG[type as keyof typeof FACILITY_CONFIG]
+      const totalOutput = facilities.reduce((s, f) => s + f.baseOutput * f.efficiency, 0)
+      const avgEfficiency = facilities.reduce((s, f) => s + f.efficiency, 0) / facilities.length
+      const totalMaintenance = facilities.reduce((s, f) => s + f.maintenanceCost, 0)
+      
+      facilityData.push([
+        config.name,
+        `${facilities.length} 座`,
+        `${formatNumber(totalOutput)} 魔力`,
+        formatPercent(avgEfficiency),
+        `${formatNumber(totalMaintenance)} 金币`,
+      ])
+    }
+    
+    drawTable(doc, facilityData, 15, y, pageWidth - 30)
+    y += (facilityData.length + 1) * 7 + 5
+  }
+  
+  if (opts.priceChart && data.charts.priceChart) {
+    if (y > pageHeight - 100) { doc.addPage(); y = 15 }
+    
     doc.setFontSize(14)
     doc.setFont('helvetica', 'bold')
     doc.text('四、价格走势分析', 15, y)
@@ -146,12 +188,9 @@ export const generateEnergyReport = async (
     }
   }
   
-  if (y > pageHeight - 60) {
-    doc.addPage()
-    y = 15
-  }
-  
-  if (data.charts.supplyDemandChart) {
+  if (opts.supplyDemandChart && data.charts.supplyDemandChart) {
+    if (y > pageHeight - 60) { doc.addPage(); y = 15 }
+    
     doc.setFontSize(14)
     doc.setFont('helvetica', 'bold')
     doc.text('五、供需关系趋势', 15, y)
@@ -167,12 +206,9 @@ export const generateEnergyReport = async (
     }
   }
   
-  if (y > pageHeight - 60) {
-    doc.addPage()
-    y = 15
-  }
-  
-  if (data.charts.radarChart) {
+  if (opts.radarChart && data.charts.radarChart) {
+    if (y > pageHeight - 60) { doc.addPage(); y = 15 }
+    
     doc.setFontSize(14)
     doc.setFont('helvetica', 'bold')
     doc.text('六、综合能力评估', 15, y)
@@ -188,60 +224,59 @@ export const generateEnergyReport = async (
     }
   }
   
-  if (y > pageHeight - 100) {
-    doc.addPage()
-    y = 15
+  if (opts.leaderboard) {
+    if (y > pageHeight - 100) { doc.addPage(); y = 15 }
+    
+    doc.setFontSize(14)
+    doc.setFont('helvetica', 'bold')
+    doc.text('七、全服排行榜', 15, y)
+    y += 8
+    
+    doc.setFontSize(11)
+    doc.setFont('helvetica', 'bold')
+    doc.text('发电量排行 TOP 10', 15, y)
+    y += 6
+    
+    const genData = [
+      ['排名', '玩家', '公会', '发电量', '变化'],
+    ]
+    data.leaderboard.generation.slice(0, 10).forEach(e => {
+      genData.push([
+        `#${e.rank}`,
+        e.playerName,
+        e.guildName || '-',
+        formatNumber(e.value),
+        `${e.change >= 0 ? '↑' : '↓'}${Math.abs(e.change)}`,
+      ])
+    })
+    drawTable(doc, genData, 15, y, pageWidth - 30)
+    y += (genData.length + 1) * 7 + 5
+    
+    if (y > pageHeight - 60) {
+      doc.addPage()
+      y = 15
+    }
+    
+    doc.setFontSize(11)
+    doc.setFont('helvetica', 'bold')
+    doc.text('交易量排行 TOP 10', 15, y)
+    y += 6
+    
+    const tradeData = [
+      ['排名', '玩家', '公会', '交易量', '变化'],
+    ]
+    data.leaderboard.trading.slice(0, 10).forEach(e => {
+      tradeData.push([
+        `#${e.rank}`,
+        e.playerName,
+        e.guildName || '-',
+        formatNumber(e.value),
+        `${e.change >= 0 ? '↑' : '↓'}${Math.abs(e.change)}`,
+      ])
+    })
+    drawTable(doc, tradeData, 15, y, pageWidth - 30)
+    y += (tradeData.length + 1) * 7 + 8
   }
-  
-  doc.setFontSize(14)
-  doc.setFont('helvetica', 'bold')
-  doc.text('七、全服排行榜', 15, y)
-  y += 8
-  
-  doc.setFontSize(11)
-  doc.setFont('helvetica', 'bold')
-  doc.text('发电量排行 TOP 10', 15, y)
-  y += 6
-  
-  const genData = [
-    ['排名', '玩家', '公会', '发电量', '变化'],
-  ]
-  data.leaderboard.generation.slice(0, 10).forEach(e => {
-    genData.push([
-      `#${e.rank}`,
-      e.playerName,
-      e.guildName || '-',
-      formatNumber(e.value),
-      `${e.change >= 0 ? '↑' : '↓'}${Math.abs(e.change)}`,
-    ])
-  })
-  drawTable(doc, genData, 15, y, pageWidth - 30)
-  y += (genData.length + 1) * 7 + 5
-  
-  if (y > pageHeight - 60) {
-    doc.addPage()
-    y = 15
-  }
-  
-  doc.setFontSize(11)
-  doc.setFont('helvetica', 'bold')
-  doc.text('交易量排行 TOP 10', 15, y)
-  y += 6
-  
-  const tradeData = [
-    ['排名', '玩家', '公会', '交易量', '变化'],
-  ]
-  data.leaderboard.trading.slice(0, 10).forEach(e => {
-    tradeData.push([
-      `#${e.rank}`,
-      e.playerName,
-      e.guildName || '-',
-      formatNumber(e.value),
-      `${e.change >= 0 ? '↑' : '↓'}${Math.abs(e.change)}`,
-    ])
-  })
-  drawTable(doc, tradeData, 15, y, pageWidth - 30)
-  y += (tradeData.length + 1) * 7 + 8
   
   doc.setDrawColor(168, 85, 247)
   doc.setLineWidth(0.5)

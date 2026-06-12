@@ -6,6 +6,7 @@ import {
   HUB_FEE_DISCOUNT,
   HUB_COVERAGE,
   MATERIALS,
+  GRID_REGIONS,
 } from '@/constants'
 import type { GuildRole, ApprovalStatus } from '@/types'
 import GuildCard from './GuildCard'
@@ -37,6 +38,7 @@ export default function GuildPage() {
   const [contributeGold, setContributeGold] = useState(0)
   const [contributeMaterials, setContributeMaterials] = useState<Record<string, number>>({})
   const [upgradeCountdown, setUpgradeCountdown] = useState<number>(0)
+  const [selectedRegionIndex, setSelectedRegionIndex] = useState(0)
 
   const myGuild = useMemo(
     () => guilds.find((g) => g.id === currentPlayer.guildId) || null,
@@ -339,6 +341,97 @@ export default function GuildPage() {
               </div>
             </div>
           </div>
+
+          {!myGuild.hub && (
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+              <div className="h-3 bg-gradient-to-r from-slate-400 via-slate-500 to-slate-600" />
+              <div className="p-6">
+                <div className="flex items-center justify-between mb-5">
+                  <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                    <span className="text-2xl">⚡</span> 超级能源枢纽
+                    <span className="px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-600 text-sm font-semibold">
+                      未建造
+                    </span>
+                  </h3>
+                </div>
+
+                <div className="space-y-5">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="p-4 rounded-xl bg-amber-50/50 border border-amber-100">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-sm font-medium text-amber-700 flex items-center gap-2">
+                          <span>💰</span> 建造消耗
+                        </span>
+                      </div>
+                      <div className="text-2xl font-bold text-amber-700">
+                        500,000 金币
+                      </div>
+                    </div>
+                    <div className="p-4 rounded-xl bg-emerald-50/50 border border-emerald-100">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-sm font-medium text-emerald-700 flex items-center gap-2">
+                          <span>🏦</span> 当前公会金库
+                        </span>
+                      </div>
+                      <div className={`text-2xl font-bold ${myGuild.gold >= 500000 ? 'text-emerald-700' : 'text-rose-700'}`}>
+                        {myGuild.gold.toLocaleString()} 金币
+                      </div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-2">
+                      📍 选择建造区域
+                    </label>
+                    <select
+                      value={selectedRegionIndex}
+                      onChange={(e) => setSelectedRegionIndex(parseInt(e.target.value))}
+                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
+                    >
+                      {GRID_REGIONS.map((region, idx) => (
+                        <option key={region.id} value={idx}>
+                          区域 {idx + 1} - {region.name} (X:{region.centerX}, Y:{region.centerY})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="p-4 rounded-xl bg-indigo-50/50 border border-indigo-100">
+                    <div className="text-sm font-semibold text-indigo-800 mb-2">🎁 建造后全体成员获得：</div>
+                    <div className="flex flex-wrap gap-2">
+                      <span className="px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-700 text-xs font-medium">
+                        效率 +{((HUB_EFFICIENCY_BONUS[1] || 0) * 100).toFixed(0)}%
+                      </span>
+                      <span className="px-2.5 py-1 rounded-full bg-cyan-100 text-cyan-700 text-xs font-medium">
+                        折扣 -{((HUB_FEE_DISCOUNT[1] || 0) * 100).toFixed(0)}%
+                      </span>
+                      <span className="px-2.5 py-1 rounded-full bg-amber-100 text-amber-700 text-xs font-medium">
+                        覆盖 {HUB_COVERAGE[1] || 0}km
+                      </span>
+                    </div>
+                  </div>
+
+                  {(myRole !== 'leader' && myRole !== 'vice_leader' && myRole !== 'tech_officer') && (
+                    <div className="p-3 rounded-xl bg-amber-50 border border-amber-100 text-amber-700 text-sm flex items-center gap-2">
+                      <span>⚠️</span>
+                      <span>仅会长、副会长、技术官可发起建造</span>
+                    </div>
+                  )}
+
+                  <button
+                    onClick={() => actions.buildHub(selectedRegionIndex)}
+                    disabled={
+                      (myRole !== 'leader' && myRole !== 'vice_leader' && myRole !== 'tech_officer') ||
+                      myGuild.gold < 500000
+                    }
+                    className="w-full py-3.5 rounded-xl bg-gradient-to-r from-slate-700 via-slate-800 to-slate-900 text-white font-bold hover:from-slate-800 hover:via-slate-900 hover:to-black transition-all shadow-xl shadow-slate-200/50 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none"
+                  >
+                    🔨 建造超级能源枢纽
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {myGuild.hub && (
             <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">

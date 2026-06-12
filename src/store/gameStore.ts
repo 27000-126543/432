@@ -72,6 +72,7 @@ import {
   approveUpgrade,
   completeUpgrade,
   calculateGuildBonus,
+  createSuperHub,
 } from '@/engine/guildEngine'
 
 interface GameState {
@@ -135,6 +136,7 @@ interface GameState {
     contributeToGuild: (gold: number, materials: Record<string, number>) => void
     requestHubUpgrade: () => void
     approveHubUpgrade: (role: 'leader' | 'viceLeader' | 'techOfficer', approve: boolean) => void
+    buildHub: (regionIndex: number) => boolean
     
     addNotification: (notification: Omit<Notification, 'id' | 'timestamp' | 'read'>) => void
     markNotificationRead: (notificationId: string) => void
@@ -150,7 +152,16 @@ interface GameState {
       maintenanceCost: number
     }
     
-    exportReport: () => Promise<void>
+    exportReport: (options?: {
+      playerInfo?: boolean
+      summary?: boolean
+      facilities?: boolean
+      priceChart?: boolean
+      supplyDemandChart?: boolean
+      radarChart?: boolean
+      leaderboard?: boolean
+      guild?: boolean
+    }) => Promise<void>
   }
 }
 
@@ -246,10 +257,32 @@ export const useGameStore = create<GameState>((set, get) => {
         const now = Date.now()
         const newTick = state.tickCount + 1
         
+        const expiredEvents = state.gridEvents.filter(e => e.isActive && e.endTime <= now)
+        if (expiredEvents.length > 0) {
+          for (const ev of expiredEvents) {
+            get().actions.addNotification({
+              type: 'info',
+              title: '事件结束',
+              message: `${ev.type === 'energy_overload' ? '能源过载' : ev.type === 'mana_tide' ? '魔力潮汐' : ev.type === 'storm' ? '魔法风暴' : ev.type === 'energy_theft' ? '窃能事件' : ev.type === 'efficiency_boost' ? '效率提升' : '价格震荡'}事件已结束`,
+            })
+          }
+        }
+        const markedGridEvents = state.gridEvents.map(e => (e.endTime <= now ? { ...e, isActive: false } : e))
+        const activeGridEvents = markedGridEvents.filter(e => e.isActive && e.endTime > now)
+        
         const weather = updateWeather(state.weather)
         
         let allFacilities = state.allFacilities.map(f => {
-          if (!f.isActive) return f
+          const eventOutputMultiplier = activeGridEvents.reduce((mult, ev) => {
+            if (ev.effect.outputMultiplier === undefined) return mult
+            const match =
+              (ev.facilityId && ev.facilityId === f.id) ||
+              (!ev.facilityId && !ev.regionId) ||
+              (!ev.facilityId && ev.regionId && Math.random() < 0.3)
+            return match ? mult * ev.effect.outputMultiplier : mult
+          }, 1)
+
+          if (!f.isActive) return { ...f, eventMultiplier: eventOutputMultiplier }
           
           const nearby = state.allFacilities.filter(other => {
             if (other.id === f.id || !other.isActive) return false
@@ -275,6 +308,7 @@ export const useGameStore = create<GameState>((set, get) => {
             efficiency,
             durability: Math.max(0, f.durability - decay * 0.01),
             specialModifiers: newModifiers,
+            eventMultiplier: eventOutputMultiplier,
           }
         })
         
@@ -282,6 +316,15 @@ export const useGameStore = create<GameState>((set, get) => {
           const allF = allFacilities.find(af => af.id === f.id)
           if (allF) return allF
           
+          const eventOutputMultiplier = activeGridEvents.reduce((mult, ev) => {
+            if (ev.effect.outputMultiplier === undefined) return mult
+            const match =
+              (ev.facilityId && ev.facilityId === f.id) ||
+              (!ev.facilityId && !ev.regionId) ||
+              (!ev.facilityId && ev.regionId && Math.random() < 0.3)
+            return match ? mult * ev.effect.outputMultiplier : mult
+          }, 1)
+
           const nearby = state.playerFacilities.filter(other => {
             if (other.id === f.id || !other.isActive) return false
             const dx = other.x - f.x
@@ -296,15 +339,36 @@ export const useGameStore = create<GameState>((set, get) => {
             ...f,
             efficiency,
             durability: Math.max(0, f.durability - decay * 0.01),
+            eventMultiplier: eventOutputMultiplier,
           }
         })
         
-        const gridLines = state.gridLines.map(updateGridLineStatus)
+        const baseGridLines = state.gridLines.map(updateGridLineStatus)
+        const processedLines = baseGridLines.map(line => {
+          let newLine = { ...line }
+          for (const ev of activeGridEvents) {
+            const match =
+              (ev.lineId && ev.lineId === line.id) ||
+              (!ev.lineId && Math.random() < 0.3)
+            if (!match) continue
+            
+            if (ev.effect.durabilityDamage) {
+              newLine.durability = Math.max(0, newLine.durability - ev.effect.durabilityDamage / 1000)
+            }
+            if (ev.effect.lossRateIncrease) {
+              newLine.lossRate = Math.min(0.8, newLine.lossRate * (1 + ev.effect.lossRateIncrease))
+            }
+          }
+          if (newLine.lossRate > 0.01) {
+            newLine.lossRate = Math.max(0.01, newLine.lossRate * 0.995)
+          }
+          return newLine
+        })
         
-        let gridEvents = state.gridEvents.filter(e => e.endTime > now)
+        let gridEvents = markedGridEvents.filter(e => e.endTime > now)
         const newEvent = generateRandomEvent(
           state.gridRegions.map(r => r.id),
-          gridLines.map(l => l.id),
+          processedLines.map(l => l.id),
           allFacilities.filter(f => f.isActive).map(f => f.id)
         )
         if (newEvent) {
@@ -320,8 +384,8 @@ export const useGameStore = create<GameState>((set, get) => {
           })
         }
         
-        const eventMultiplier = gridEvents
-          .filter(e => e.isActive && e.effect.priceMultiplier)
+        const eventMultiplier = activeGridEvents
+          .filter(e => e.effect.priceMultiplier)
           .reduce((acc, e) => acc * (e.effect.priceMultiplier || 1), 1)
         
         const totalSupply = state.gridRegions.reduce((s, r) => s + r.totalSupply, 0)
@@ -344,14 +408,12 @@ export const useGameStore = create<GameState>((set, get) => {
               player = {
                 ...player,
                 manaTokens: player.manaTokens + trade.amount,
-                gold: player.gold - trade.amount * trade.price,
                 totalTraded: player.totalTraded + 1,
               }
             }
             if (trade.sellerId === player.id) {
               player = {
                 ...player,
-                manaTokens: player.manaTokens - trade.amount,
                 gold: player.gold + trade.amount * trade.price - trade.fee,
                 totalTraded: player.totalTraded + 1,
               }
@@ -361,7 +423,7 @@ export const useGameStore = create<GameState>((set, get) => {
         
         const { regions: flowRegions, lines: flowLines } = simulateRegionFlow(
           state.gridRegions,
-          gridLines
+          processedLines
         )
         
         let buyOrders = updatedBuyOrders.filter(
@@ -444,7 +506,11 @@ export const useGameStore = create<GameState>((set, get) => {
         
         const totalGenerated = state.playerFacilities
           .filter(f => f.isActive)
-          .reduce((s, f) => s + calculateFacilityOutput(f, f.efficiency), 0)
+          .reduce((s, f) => {
+            const base = calculateFacilityOutput(f, f.efficiency)
+            const mult = (f as any).eventMultiplier || 1
+            return s + base * mult
+          }, 0)
         
         const currentPlayer = {
           ...state.currentPlayer,
@@ -974,9 +1040,28 @@ export const useGameStore = create<GameState>((set, get) => {
             }
             
             if (g.hub?.upgradeProcess) {
+              const oldStatus = g.hub.upgradeProcess.status
+              const newProcess = contributeToUpgrade(g.hub.upgradeProcess, gold, materials)
+              
+              if (oldStatus === 'collecting' && newProcess.status === 'approving') {
+                const viceLeadersApprovals: Record<string, 'pending'> = {}
+                for (const vl of g.viceLeaders) {
+                  viceLeadersApprovals[vl] = 'pending'
+                }
+                const techOfficersApprovals: Record<string, 'pending'> = {}
+                for (const to of g.techOfficers) {
+                  techOfficersApprovals[to] = 'pending'
+                }
+                newProcess.approvals = {
+                  ...newProcess.approvals,
+                  viceLeaders: viceLeadersApprovals,
+                  techOfficers: techOfficersApprovals,
+                }
+              }
+              
               updatedGuild.hub = {
                 ...g.hub,
-                upgradeProcess: contributeToUpgrade(g.hub.upgradeProcess, gold, materials),
+                upgradeProcess: newProcess,
               }
             }
             
@@ -1063,6 +1148,48 @@ export const useGameStore = create<GameState>((set, get) => {
         set({ guilds })
       },
       
+      buildHub: (regionIndex) => {
+        const state = get()
+        const player = state.currentPlayer
+        if (!player.guildId) return false
+        if (player.guildRole !== 'leader' && player.guildRole !== 'vice_leader' && player.guildRole !== 'tech_officer') {
+          get().actions.addNotification({ type: 'error', title: '无权限', message: '仅公会干部可建造枢纽' })
+          return false
+        }
+        const guild = state.guilds.find(g => g.id === player.guildId)
+        if (!guild) return false
+        if (guild.hub) {
+          get().actions.addNotification({ type: 'warning', title: '已存在枢纽', message: '该公会已建造超级能源枢纽' })
+          return false
+        }
+        const cost = 500000
+        if (guild.gold < cost) {
+          get().actions.addNotification({ type: 'error', title: '金库不足', message: `建造枢纽需要公会金库 ${cost.toLocaleString()} 金币` })
+          return false
+        }
+        
+        const hub = createSuperHub(guild, regionIndex)
+        const bonus = calculateGuildBonus({ ...guild, hub })
+        
+        const guilds = state.guilds.map(g => {
+          if (g.id === player.guildId) {
+            return {
+              ...g,
+              gold: g.gold - cost,
+              hub,
+              efficiencyBonus: bonus.efficiencyBonus,
+              feeDiscount: bonus.feeDiscount,
+              gridCoverage: bonus.coverage,
+            }
+          }
+          return g
+        })
+        
+        set({ guilds })
+        get().actions.addNotification({ type: 'success', title: '建造成功', message: '超级能源枢纽建造完成，全体公会成员享受加成！' })
+        return true
+      },
+      
       addNotification: (notification) => {
         set(state => ({
           notifications: [
@@ -1133,14 +1260,26 @@ export const useGameStore = create<GameState>((set, get) => {
         }
       },
       
-      exportReport: async () => {
+      exportReport: async (userOptions = {}) => {
         const state = get()
         const { downloadPDF, captureChart } = await import('@/utils/pdfExport')
         
+        const defaultOptions = {
+          playerInfo: true,
+          summary: true,
+          facilities: true,
+          priceChart: true,
+          supplyDemandChart: true,
+          radarChart: true,
+          leaderboard: true,
+          guild: true,
+        }
+        const options = { ...defaultOptions, ...userOptions }
+        
         const [priceChart, supplyDemandChart, radarChart] = await Promise.all([
-          captureChart('price-chart-container'),
-          captureChart('supply-demand-chart-container'),
-          captureChart('radar-chart-container'),
+          options.priceChart ? captureChart('price-chart-container') : Promise.resolve(undefined),
+          options.supplyDemandChart ? captureChart('supply-demand-chart-container') : Promise.resolve(undefined),
+          options.radarChart ? captureChart('radar-chart-container') : Promise.resolve(undefined),
         ])
         
         await downloadPDF({
@@ -1159,6 +1298,7 @@ export const useGameStore = create<GameState>((set, get) => {
             supplyDemandChart,
             radarChart,
           },
+          options,
         })
       },
     },

@@ -72,15 +72,15 @@ const StatCard = ({
 
 export default function ReportPage() {
   const { stats, priceHistory, supplyDemandSnapshots, currentPlayer, playerFacilities, guilds, actions } = useGameStore()
-  const [exportOptions, setExportOptions] = useState({
-    playerProfile: true,
+  const [options, setOptions] = useState({
+    playerInfo: true,
     priceChart: true,
     supplyDemandChart: true,
     radarChart: true,
-    statsSummary: true,
-    facilitiesList: true,
+    summary: true,
+    facilities: true,
     leaderboard: true,
-    guildInfo: true,
+    guild: true,
   })
   const [isExporting, setIsExporting] = useState(false)
 
@@ -360,25 +360,28 @@ export default function ReportPage() {
     },
   ]
 
-  const toggleOption = (key: keyof typeof exportOptions) => {
-    setExportOptions((prev) => ({ ...prev, [key]: !prev[key] }))
+  const toggleOption = (key: keyof typeof options) => {
+    setOptions((prev) => ({ ...prev, [key]: !prev[key] }))
   }
 
-  const optionLabels: { key: keyof typeof exportOptions; label: string; icon: string }[] = [
-    { key: 'playerProfile', label: '玩家概况', icon: '👤' },
+  const optionLabels: { key: keyof typeof options; label: string; icon: string }[] = [
+    { key: 'playerInfo', label: '玩家概况', icon: '👤' },
     { key: 'priceChart', label: '价格走势图', icon: '📈' },
     { key: 'supplyDemandChart', label: '供需曲线图', icon: '📊' },
     { key: 'radarChart', label: '能力雷达图', icon: '🎯' },
-    { key: 'statsSummary', label: '数据摘要', icon: '📋' },
-    { key: 'facilitiesList', label: '设施清单', icon: '🏭' },
+    { key: 'summary', label: '数据摘要', icon: '📋' },
+    { key: 'facilities', label: '设施清单', icon: '🏭' },
     { key: 'leaderboard', label: '排行榜信息', icon: '🏆' },
-    { key: 'guildInfo', label: '公会信息', icon: '🛡️' },
+    { key: 'guild', label: '公会信息', icon: '🛡️' },
   ]
 
+  const hasAnyOption = Object.values(options).some(Boolean)
+
   const handleExport = async () => {
+    if (!hasAnyOption) return
     setIsExporting(true)
     try {
-      await actions.exportReport()
+      await actions.exportReport(options)
     } catch (e) {
       console.error('Export failed:', e)
     } finally {
@@ -477,7 +480,7 @@ export default function ReportPage() {
               </p>
             </div>
             <span className="text-xs text-slate-400">
-              已选 {Object.values(exportOptions).filter(Boolean).length} / {Object.keys(exportOptions).length}
+              已选 {Object.values(options).filter(Boolean).length} / {Object.keys(options).length}
             </span>
           </div>
 
@@ -486,20 +489,20 @@ export default function ReportPage() {
               <label
                 key={key}
                 className={`flex items-center gap-3 p-3 rounded-xl border-2 cursor-pointer transition-all ${
-                  exportOptions[key]
+                  options[key]
                     ? 'border-indigo-300 bg-indigo-50'
                     : 'border-slate-100 bg-white hover:border-slate-200'
                 }`}
               >
                 <input
                   type="checkbox"
-                  checked={exportOptions[key]}
+                  checked={options[key]}
                   onChange={() => toggleOption(key)}
                   className="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500"
                 />
                 <div className="flex items-center gap-2 min-w-0">
                   <span className="text-lg flex-shrink-0">{icon}</span>
-                  <span className={`text-sm font-medium truncate ${exportOptions[key] ? 'text-indigo-700' : 'text-slate-700'}`}>
+                  <span className={`text-sm font-medium truncate ${options[key] ? 'text-indigo-700' : 'text-slate-700'}`}>
                     {label}
                   </span>
                 </div>
@@ -519,9 +522,9 @@ export default function ReportPage() {
             </div>
             <button
               onClick={handleExport}
-              disabled={isExporting}
+              disabled={isExporting || !hasAnyOption}
               className={`px-8 py-3.5 rounded-xl text-white font-bold text-sm transition-all flex items-center justify-center gap-2 shadow-lg ${
-                isExporting
+                isExporting || !hasAnyOption
                   ? 'bg-slate-400 cursor-not-allowed'
                   : 'bg-gradient-to-r from-indigo-500 to-purple-500 hover:from-indigo-600 hover:to-purple-600 shadow-indigo-500/25 hover:shadow-indigo-500/40'
               }`}

@@ -133,12 +133,29 @@ export const generateRandomEvent = (
       let regionId: string | null = null
       let lineId: string | null = null
       let facilityId: string | null = null
+      let affectedLineIds: string[] | undefined = undefined
       
       if (type === 'storm') {
         lineId = lineIds.length > 0 ? randomChoice(lineIds) : null
         regionId = regionIds.length > 0 ? randomChoice(regionIds) : null
+        if (lineIds.length > 0) {
+          const n = Math.min(lineIds.length, 2 + Math.floor(severity / 2))
+          const shuffled = [...lineIds].sort(() => Math.random() - 0.5)
+          affectedLineIds = shuffled.slice(0, n)
+          if (lineId && !affectedLineIds.includes(lineId)) {
+            affectedLineIds[0] = lineId
+          }
+        }
       } else if (type === 'energy_theft') {
         lineId = lineIds.length > 0 ? randomChoice(lineIds) : null
+        if (lineIds.length > 0) {
+          const n = Math.min(lineIds.length, 1 + Math.floor(severity / 3))
+          const shuffled = [...lineIds].sort(() => Math.random() - 0.5)
+          affectedLineIds = shuffled.slice(0, n)
+          if (lineId && !affectedLineIds.includes(lineId)) {
+            affectedLineIds[0] = lineId
+          }
+        }
       } else if (type === 'energy_overload') {
         facilityId = facilityIds.length > 0 ? randomChoice(facilityIds) : null
         regionId = regionIds.length > 0 ? randomChoice(regionIds) : null
@@ -155,6 +172,7 @@ export const generateRandomEvent = (
         regionId,
         lineId,
         facilityId,
+        affectedLineIds,
         startTime: Date.now(),
         endTime: Date.now() + duration,
         description: generateEventDescription(type, severity),

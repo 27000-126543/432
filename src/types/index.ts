@@ -114,6 +114,7 @@ export interface GridEvent {
   regionId: string | null
   lineId: string | null
   facilityId: string | null
+  affectedLineIds?: string[]
   startTime: number
   endTime: number
   description: string

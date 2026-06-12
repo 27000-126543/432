@@ -693,10 +693,12 @@ export default function GuildPage() {
                           <span className="text-xl">⚔️</span> 副会长审批
                           <span className="text-xs font-normal text-purple-600">
                             ({Object.keys(upgradeProcess.approvals.viceLeaders).length}人)
-                            {Object.keys(upgradeProcess.approvals.viceLeaders).length === 0 && (
-                              <span className="ml-1 text-purple-500">（无人担任，自动通过）</span>
-                            )}
                           </span>
+                          {Object.keys(upgradeProcess.approvals.viceLeaders).length === 0 && (
+                            <span className="ml-1 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-xs font-semibold">
+                              ✓ 无人担任，自动通过
+                            </span>
+                          )}
                         </div>
                         {myGuild && myGuild.viceLeaders.includes(currentPlayer.id) && upgradeProcess.approvals.viceLeaders[currentPlayer.id] === 'pending' && (
                           <div className="flex gap-2 mb-3 pb-3 border-b border-purple-200">
@@ -734,10 +736,12 @@ export default function GuildPage() {
                           <span className="text-xl">🔧</span> 技术官审批
                           <span className="text-xs font-normal text-cyan-600">
                             ({Object.keys(upgradeProcess.approvals.techOfficers).length}人)
-                            {Object.keys(upgradeProcess.approvals.techOfficers).length === 0 && (
-                              <span className="ml-1 text-cyan-500">（无人担任，自动通过）</span>
-                            )}
                           </span>
+                          {Object.keys(upgradeProcess.approvals.techOfficers).length === 0 && (
+                            <span className="ml-1 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-xs font-semibold">
+                              ✓ 无人担任，自动通过
+                            </span>
+                          )}
                         </div>
                         {myGuild && myGuild.techOfficers.includes(currentPlayer.id) && upgradeProcess.approvals.techOfficers[currentPlayer.id] === 'pending' && (
                           <div className="flex gap-2 mb-3 pb-3 border-b border-cyan-200">
@@ -824,12 +828,40 @@ export default function GuildPage() {
           )}
 
           <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
-            <h3 className="text-lg font-bold text-slate-800 mb-5 flex items-center gap-2">
-              <span className="text-2xl">👥</span> 公会成员
-              <span className="px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-600 text-sm font-medium">
-                {membersWithRoles.length} 人
-              </span>
-            </h3>
+            <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
+              <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                <span className="text-2xl">👥</span> 公会成员
+                <span className="px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-600 text-sm font-medium">
+                  {membersWithRoles.length} 人
+                </span>
+              </h3>
+              {myRole === 'leader' && (
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    onClick={() => actions.addTestMember('vice_leader')}
+                    className="px-3 py-1.5 rounded-lg bg-purple-100 text-purple-700 text-xs font-semibold hover:bg-purple-200 transition-colors"
+                  >
+                    + 添加测试副会长
+                  </button>
+                  <button
+                    onClick={() => actions.addTestMember('tech_officer')}
+                    className="px-3 py-1.5 rounded-lg bg-cyan-100 text-cyan-700 text-xs font-semibold hover:bg-cyan-200 transition-colors"
+                  >
+                    + 添加测试技术官
+                  </button>
+                  <button
+                    onClick={() => actions.toggleLeaderActAsTech()}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                      myGuild.techOfficers.includes(currentPlayer.id)
+                        ? 'bg-amber-100 text-amber-700 hover:bg-amber-200'
+                        : 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200'
+                    }`}
+                  >
+                    {myGuild.techOfficers.includes(currentPlayer.id) ? '🔧 卸任技术官' : '🔧 我兼任技术官'}
+                  </button>
+                </div>
+              )}
+            </div>
 
             <div className="space-y-2">
               {membersWithRoles.map((member) => {

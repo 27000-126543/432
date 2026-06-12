@@ -73,6 +73,7 @@ import {
   completeUpgrade,
   calculateGuildBonus,
   createSuperHub,
+  addGuildMember,
 } from '@/engine/guildEngine'
 import type { PDFReportData } from '@/utils/pdfExport'
 
@@ -139,6 +140,8 @@ interface GameState {
     approveHubUpgrade: (role: 'leader' | 'viceLeader' | 'techOfficer', approve: boolean) => void
     buildHub: (regionIndex: number) => boolean
     appointMember: (memberId: string, role: 'vice_leader' | 'tech_officer' | 'member') => boolean
+    addTestMember: (role: 'vice_leader' | 'tech_officer' | 'member') => boolean
+    toggleLeaderActAsTech: () => boolean
     
     addNotification: (notification: Omit<Notification, 'id' | 'timestamp' | 'read'>) => void
     markNotificationRead: (notificationId: string) => void
@@ -354,8 +357,8 @@ export const useGameStore = create<GameState>((set, get) => {
           let totalTempAddon = 0
           for (const ev of activeGridEvents) {
             const match =
-              (ev.lineId && ev.lineId === line.id) ||
-              (!ev.lineId && Math.random() < 0.3)
+              (ev.affectedLineIds && ev.affectedLineIds.includes(line.id)) ||
+              (ev.lineId && ev.lineId === line.id)
             if (!match) continue
             
             if (ev.effect.durabilityDamage) {
@@ -475,6 +478,30 @@ export const useGameStore = create<GameState>((set, get) => {
           }
         }
         
+        let finalGuilds = state.guilds
+        let guildsChanged = false
+        for (let gi = 0; gi < finalGuilds.length; gi++) {
+          const g = finalGuilds[gi]
+          if (g.hub?.upgradeProcess && g.hub.upgradeProcess.status === 'upgrading' && g.hub.upgradeProcess.completeTime && g.hub.upgradeProcess.completeTime <= now) {
+            const completed = completeUpgrade(g.hub, g.hub.upgradeProcess)
+            completed.upgradeProcess = null
+            const bonus = calculateGuildBonus({ ...g, hub: completed })
+            finalGuilds = finalGuilds.map((gg, idx) => idx === gi ? {
+              ...gg,
+              hub: completed,
+              efficiencyBonus: bonus.efficiencyBonus,
+              feeDiscount: bonus.feeDiscount,
+              gridCoverage: bonus.coverage,
+            } : gg)
+            guildsChanged = true
+            get().actions.addNotification({
+              type: 'success',
+              title: '🎉 升级成功',
+              message: `${g.name} 超级能源枢纽已升级到 Lv.${completed.level}！`,
+            })
+          }
+        }
+        
         set({
           tickCount: newTick,
           lastUpdate: now,
@@ -489,6 +516,7 @@ export const useGameStore = create<GameState>((set, get) => {
           currentPrice: newPrice,
           gridRegions: flowRegions,
           currentPlayer: player,
+          ...(guildsChanged ? { guilds: finalGuilds } : {}),
         })
       },
       
@@ -1145,31 +1173,36 @@ export const useGameStore = create<GameState>((set, get) => {
           approve ? 'approved' : 'rejected'
         )
         
-        let newHub = guild.hub
-        if (allApproved) {
-          newHub = completeUpgrade(guild.hub, updatedProcess)
-          newHub.upgradeProcess = null
-        }
-        
-        const guildBonus = newHub ? calculateGuildBonus({ ...guild, hub: newHub }) : null
+        // 审批通过后，进入 upgrading 阶段，保留 upgradeProcess（带 completeTime）
+        // 升级完成由 tick() 里倒计时结束自动 complete
+        const effectiveHub = allApproved ? { ...guild.hub, upgradeProcess: updatedProcess } : { ...guild.hub, upgradeProcess: updatedProcess }
+        const guildBonus = calculateGuildBonus({ ...guild, hub: effectiveHub })
         
         const guilds = state.guilds.map(g => {
           if (g.id === player.guildId) {
             return {
               ...g,
-              hub: {
-                ...newHub,
-                upgradeProcess: !allApproved ? updatedProcess : null,
-              },
-              efficiencyBonus: guildBonus ? guildBonus.efficiencyBonus : g.efficiencyBonus,
-              feeDiscount: guildBonus ? guildBonus.feeDiscount : g.feeDiscount,
-              gridCoverage: guildBonus ? guildBonus.coverage : g.gridCoverage,
+              hub: effectiveHub,
+              efficiencyBonus: guildBonus.efficiencyBonus,
+              feeDiscount: guildBonus.feeDiscount,
+              gridCoverage: guildBonus.coverage,
             }
           }
           return g
         })
         
         set({ guilds })
+        
+        if (allApproved && approve) {
+          const remain = updatedProcess.completeTime
+            ? Math.ceil((updatedProcess.completeTime - Date.now()) / 1000)
+            : 60
+          get().actions.addNotification({
+            type: 'success',
+            title: '✅ 全部审批通过',
+            message: `超级能源枢纽开始升级，预计 ${remain} 秒后完成`,
+          })
+        }
       },
       
       buildHub: (regionIndex) => {
@@ -1249,6 +1282,61 @@ export const useGameStore = create<GameState>((set, get) => {
           type: 'success',
           title: '任命成功',
           message: `已将玩家任命为${role === 'vice_leader' ? '副会长' : role === 'tech_officer' ? '技术官' : '普通成员'}`,
+        })
+        return true
+      },
+      
+      addTestMember: (role) => {
+        const state = get()
+        const player = state.currentPlayer
+        if (!player.guildId || player.guildRole !== 'leader') {
+          get().actions.addNotification({ type: 'error', title: '无权限', message: '仅会长可添加测试成员' })
+          return false
+        }
+        const guild = state.guilds.find(g => g.id === player.guildId)
+        if (!guild) return false
+        
+        const testId = generateId('tst')
+        const testName = `测试_${randomInt(1000, 9999)}`
+        const guilds = state.guilds.map(g => {
+          if (g.id !== player.guildId) return g
+          const withMember = addGuildMember(g, testId, role)
+          return withMember
+        })
+        
+        set({ guilds })
+        get().actions.addNotification({
+          type: 'success',
+          title: '添加成功',
+          message: `已添加测试成员「${testName}」为${role === 'vice_leader' ? '副会长' : role === 'tech_officer' ? '技术官' : '普通成员'}`,
+        })
+        return true
+      },
+      
+      toggleLeaderActAsTech: () => {
+        const state = get()
+        const player = state.currentPlayer
+        if (!player.guildId || player.guildRole !== 'leader') {
+          get().actions.addNotification({ type: 'error', title: '无权限', message: '仅会长可临时兼任技术官' })
+          return false
+        }
+        const guild = state.guilds.find(g => g.id === player.guildId)
+        if (!guild) return false
+        
+        const alreadyActing = guild.techOfficers.includes(player.id)
+        const newTechOfficers = alreadyActing
+          ? guild.techOfficers.filter(id => id !== player.id)
+          : [...guild.techOfficers, player.id]
+        
+        const guilds = state.guilds.map(g => g.id === player.guildId ? { ...g, techOfficers: newTechOfficers } : g)
+        
+        set({ guilds })
+        get().actions.addNotification({
+          type: 'success',
+          title: alreadyActing ? '已卸任技术官' : '已兼任技术官',
+          message: alreadyActing
+            ? '会长已不再兼任技术官职务'
+            : '会长已临时兼任技术官，可发起枢纽升级申请',
         })
         return true
       },

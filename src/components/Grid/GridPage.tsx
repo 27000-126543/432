@@ -401,6 +401,11 @@ const GridPage = () => {
                   const to = regionMap.get(line.toRegionId)
                   const loadRatio = line.currentLoad / line.capacity
                   if (!from || !to) return null
+                  const affectingEvents = activeEvents.filter(
+                    e =>
+                      (e.affectedLineIds && e.affectedLineIds.includes(line.id)) ||
+                      (e.lineId === line.id)
+                  )
                   return (
                     <div key={line.id} className="px-4 py-3 border-b border-slate-800/50 hover:bg-slate-800/30">
                       <div className="flex items-center justify-between mb-2">
@@ -456,6 +461,32 @@ const GridPage = () => {
                           </div>
                         </div>
                       </div>
+
+                      {affectingEvents.length > 0 && (
+                        <div className="mb-2 flex flex-wrap gap-1">
+                          {affectingEvents.map(ev => {
+                            const cfg = EVENT_CONFIG[ev.type]
+                            const evtLabel =
+                              ev.type === 'storm' ? '🌪️ 风暴' :
+                              ev.type === 'energy_theft' ? '🕵️ 窃能' :
+                              ev.type === 'energy_overload' ? '⚡ 过载' :
+                              ev.type === 'mana_tide' ? '🌊 潮涌' :
+                              ev.type === 'efficiency_boost' ? '✨ 增益' : '📈 震荡'
+                            return (
+                              <span
+                                key={ev.id}
+                                className="text-[10px] px-1.5 py-0.5 rounded font-medium"
+                                style={{
+                                  backgroundColor: `${cfg?.severityColors[ev.severity] || '#a855f7'}25`,
+                                  color: cfg?.severityColors[ev.severity] || '#a855f7',
+                                }}
+                              >
+                                {evtLabel}
+                              </span>
+                            )
+                          })}
+                        </div>
+                      )}
 
                       <div className="mb-2">
                         <div className="flex justify-between text-[10px] mb-0.5">

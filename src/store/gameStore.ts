@@ -74,6 +74,7 @@ import {
   calculateGuildBonus,
   createSuperHub,
 } from '@/engine/guildEngine'
+import type { PDFReportData } from '@/utils/pdfExport'
 
 interface GameState {
   currentPlayer: Player
@@ -137,6 +138,7 @@ interface GameState {
     requestHubUpgrade: () => void
     approveHubUpgrade: (role: 'leader' | 'viceLeader' | 'techOfficer', approve: boolean) => void
     buildHub: (regionIndex: number) => boolean
+    appointMember: (memberId: string, role: 'vice_leader' | 'tech_officer' | 'member') => boolean
     
     addNotification: (notification: Omit<Notification, 'id' | 'timestamp' | 'read'>) => void
     markNotificationRead: (notificationId: string) => void
@@ -346,6 +348,10 @@ export const useGameStore = create<GameState>((set, get) => {
         const baseGridLines = state.gridLines.map(updateGridLineStatus)
         const processedLines = baseGridLines.map(line => {
           let newLine = { ...line }
+          
+          if (newLine.baseLossRate === undefined) newLine.baseLossRate = newLine.lossRate
+          
+          let totalTempAddon = 0
           for (const ev of activeGridEvents) {
             const match =
               (ev.lineId && ev.lineId === line.id) ||
@@ -356,12 +362,24 @@ export const useGameStore = create<GameState>((set, get) => {
               newLine.durability = Math.max(0, newLine.durability - ev.effect.durabilityDamage / 1000)
             }
             if (ev.effect.lossRateIncrease) {
-              newLine.lossRate = Math.min(0.8, newLine.lossRate * (1 + ev.effect.lossRateIncrease))
+              totalTempAddon += ev.effect.lossRateIncrease
             }
           }
-          if (newLine.lossRate > 0.01) {
-            newLine.lossRate = Math.max(0.01, newLine.lossRate * 0.995)
+          newLine.eventAppliedLossRate = totalTempAddon
+          newLine.temporaryLossRate = totalTempAddon
+          
+          const baseLoss = newLine.baseLossRate || 0.03
+          const targetLoss = clamp(baseLoss * (1 + totalTempAddon), 0.005, 0.8)
+          newLine.lossRate = newLine.lossRate * 0.9 + targetLoss * 0.1
+          
+          if (totalTempAddon > 0.01) {
+            newLine.displayStatus = 'damaged'
+          } else if (newLine.lossRate > baseLoss * 1.1) {
+            newLine.displayStatus = 'recovering'
+          } else {
+            newLine.displayStatus = 'normal'
           }
+          
           return newLine
         })
         
@@ -405,16 +423,20 @@ export const useGameStore = create<GameState>((set, get) => {
           
           for (const trade of matchedTrades) {
             if (trade.buyerId === player.id) {
+              const buyPrice = trade.buyOrderPrice || trade.price
+              const refund = Math.max(0, Math.floor((buyPrice - trade.price) * trade.amount))
               player = {
                 ...player,
                 manaTokens: player.manaTokens + trade.amount,
+                gold: player.gold + refund,
                 totalTraded: player.totalTraded + 1,
               }
             }
             if (trade.sellerId === player.id) {
+              const receive = Math.floor(trade.amount * trade.price - trade.fee)
               player = {
                 ...player,
-                gold: player.gold + trade.amount * trade.price - trade.fee,
+                gold: player.gold + receive,
                 totalTraded: player.totalTraded + 1,
               }
             }
@@ -501,7 +523,9 @@ export const useGameStore = create<GameState>((set, get) => {
         
         const totalSupply = gridRegions.reduce((s, r) => s + r.totalSupply, 0)
         const totalDemand = gridRegions.reduce((s, r) => s + r.totalDemand, 0)
-        const gridStability = calculateGridStability(state.gridLines, gridRegions)
+        const baseStability = calculateGridStability(state.gridLines, gridRegions)
+        const eventPenalty = clamp(1 - state.gridLines.reduce((s, l) => s + (l.eventAppliedLossRate || 0), 0) / Math.max(state.gridLines.length, 1) * 0.5, 0.5, 1)
+        const gridStability = clamp(baseStability * eventPenalty, 0, 1)
         const avgLossRate = state.gridLines.reduce((s, l) => s + l.lossRate, 0) / Math.max(state.gridLines.length, 1)
         
         const totalGenerated = state.playerFacilities
@@ -1190,6 +1214,45 @@ export const useGameStore = create<GameState>((set, get) => {
         return true
       },
       
+      appointMember: (memberId, role) => {
+        const state = get()
+        const player = state.currentPlayer
+        if (!player.guildId || player.guildRole !== 'leader') {
+          get().actions.addNotification({ type: 'error', title: '无权限', message: '仅会长可任命职位' })
+          return false
+        }
+        const guild = state.guilds.find(g => g.id === player.guildId)
+        if (!guild) return false
+        if (!guild.members.includes(memberId)) {
+          get().actions.addNotification({ type: 'error', title: '任命失败', message: '该玩家不在本公会' })
+          return false
+        }
+        
+        const guilds = state.guilds.map(g => {
+          if (g.id !== player.guildId) return g
+          
+          const newVice = g.viceLeaders.filter(id => id !== memberId)
+          const newTech = g.techOfficers.filter(id => id !== memberId)
+          
+          if (role === 'vice_leader') newVice.push(memberId)
+          if (role === 'tech_officer') newTech.push(memberId)
+          
+          return {
+            ...g,
+            viceLeaders: newVice,
+            techOfficers: newTech,
+          }
+        })
+        
+        set({ guilds })
+        get().actions.addNotification({
+          type: 'success',
+          title: '任命成功',
+          message: `已将玩家任命为${role === 'vice_leader' ? '副会长' : role === 'tech_officer' ? '技术官' : '普通成员'}`,
+        })
+        return true
+      },
+      
       addNotification: (notification) => {
         set(state => ({
           notifications: [
@@ -1281,6 +1344,32 @@ export const useGameStore = create<GameState>((set, get) => {
           options.supplyDemandChart ? captureChart('supply-demand-chart-container') : Promise.resolve(undefined),
           options.radarChart ? captureChart('radar-chart-container') : Promise.resolve(undefined),
         ])
+
+        const playerGuild = state.guilds.find(g => g.id === state.currentPlayer.guildId)
+        const guildForReport: PDFReportData['guild'] = playerGuild ? {
+          name: playerGuild.name,
+          emblem: playerGuild.emblem,
+          level: playerGuild.level,
+          memberRole: state.currentPlayer.guildRole === 'leader' ? '会长'
+                     : state.currentPlayer.guildRole === 'vice_leader' ? '副会长'
+                     : state.currentPlayer.guildRole === 'tech_officer' ? '技术官'
+                     : '成员',
+          memberCount: playerGuild.memberCount,
+          gold: playerGuild.gold,
+          materials: playerGuild.materials,
+          hub: playerGuild.hub ? {
+            level: playerGuild.hub.level,
+            name: playerGuild.hub.name,
+            coverageRadius: playerGuild.hub.coverageRadius,
+            totalOutput: playerGuild.hub.totalOutput,
+            upgradeStatus: playerGuild.hub.upgradeProcess
+              ? (playerGuild.hub.upgradeProcess.status === 'collecting' ? '收集中'
+                : playerGuild.hub.upgradeProcess.status === 'approving' ? '审批中'
+                : playerGuild.hub.upgradeProcess.status === 'upgrading' ? '升级中'
+                : playerGuild.hub.upgradeProcess.status)
+              : undefined,
+          } : undefined,
+        } : null
         
         await downloadPDF({
           player: state.currentPlayer,
@@ -1298,6 +1387,7 @@ export const useGameStore = create<GameState>((set, get) => {
             supplyDemandChart,
             radarChart,
           },
+          guild: guildForReport,
           options,
         })
       },

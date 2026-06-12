@@ -18,6 +18,16 @@ const densityToColor = (density: number): string => {
   return `rgba(${r}, ${g}, ${b}, ${0.15 + d * 0.4})`
 }
 
+const formatRemaining = (ms: number): string => {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000))
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = totalSeconds % 60
+  if (minutes > 0) {
+    return `${minutes}分${seconds.toString().padStart(2, '0')}秒`
+  }
+  return `${seconds}秒`
+}
+
 const statusColor: Record<LineStatus, string> = {
   normal: '#22c55e',
   damaged: '#f59e0b',
@@ -415,15 +425,35 @@ const GridPage = () => {
                       </div>
 
                       <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[11px] mb-2">
-                        <div className="flex justify-between">
+                        <div className="flex justify-between items-center">
                           <span className="text-slate-500">耐久</span>
-                          <span className={`font-mono ${line.durability < 0.3 ? 'text-rose-400' : line.durability < 0.6 ? 'text-amber-400' : 'text-emerald-400'}`}>
-                            {formatPercent(line.durability, 0)}
-                          </span>
+                          <div className="flex items-center gap-2">
+                            <span className={`font-mono ${line.durability < 0.3 ? 'text-rose-400' : line.durability < 0.6 ? 'text-amber-400' : 'text-emerald-400'}`}>
+                              {formatPercent(line.durability, 0)}
+                            </span>
+                            {line.durability < 0.8 && (
+                              <span className="text-[10px] text-orange-400 whitespace-nowrap">
+                                -{((1 - line.durability) * 100).toFixed(0)}% 永久损伤
+                              </span>
+                            )}
+                          </div>
                         </div>
                         <div className="flex justify-between">
                           <span className="text-slate-500">损耗率</span>
-                          <span className="text-slate-300 font-mono">{formatPercent(line.lossRate)}</span>
+                          <div className="flex flex-col items-end">
+                            <span className="text-slate-300 font-mono">{formatPercent(line.lossRate)}</span>
+                            {(line.eventAppliedLossRate || 0) > 0.01 && (
+                              <span className="text-[10px] text-red-400">
+                                事件影响 +{((line.eventAppliedLossRate || 0) * 100).toFixed(1)}%
+                              </span>
+                            )}
+                            {line.displayStatus === 'recovering' && (
+                              <span className="text-[10px] text-yellow-400 flex items-center gap-1">
+                                <span className="w-1.5 h-1.5 rounded-full bg-yellow-400 animate-pulse" />
+                                恢复中
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </div>
 
@@ -506,7 +536,17 @@ const GridPage = () => {
                                 ))}
                               </div>
                             </div>
-                            <p className="text-[11px] text-slate-400 mb-1.5 line-clamp-2">{event.description}</p>
+                            <p className="text-[11px] text-slate-400 mb-1 line-clamp-2">{event.description}</p>
+                            {event.isActive && (
+                              <p className="text-[10px] text-slate-400 mb-1.5">
+                                {event.type === 'storm' && '影响：降低输出 + 线路耐久损耗 + 损耗率上升'}
+                                {event.type === 'energy_theft' && '影响：传输损耗率大幅上升'}
+                                {event.type === 'energy_overload' && '影响：设施输出提升，但耐久损耗加快'}
+                                {event.type === 'mana_tide' && '影响：全服设施输出显著提升'}
+                                {event.type === 'efficiency_boost' && '影响：设施效率大幅提升'}
+                                {event.type === 'price_surge' && '影响：市场价格剧烈波动'}
+                              </p>
+                            )}
                             <div className="flex items-center justify-between text-[10px]">
                               <span className="text-slate-500">
                                 {region ? region.name : event.lineId ? `线路 ${event.lineId.slice(-4)}` : '全局'}
@@ -516,14 +556,20 @@ const GridPage = () => {
                               </span>
                             </div>
                             {event.isActive && (
-                              <div className="h-1 bg-slate-800 rounded-full mt-1.5 overflow-hidden">
-                                <div
-                                  className="h-full rounded-full transition-all"
-                                  style={{
-                                    width: `${progress * 100}%`,
-                                    backgroundColor: config?.severityColors[event.severity] || '#a855f7',
-                                  }}
-                                />
+                              <div className="mt-1.5">
+                                <div className="flex justify-between text-[10px] text-slate-500 mb-0.5">
+                                  <span>剩余时间</span>
+                                  <span>{formatRemaining(remaining)}</span>
+                                </div>
+                                <div className="h-1 bg-slate-800 rounded-full overflow-hidden">
+                                  <div
+                                    className="h-full rounded-full transition-all"
+                                    style={{
+                                      width: `${progress * 100}%`,
+                                      backgroundColor: config?.severityColors[event.severity] || '#a855f7',
+                                    }}
+                                  />
+                                </div>
                               </div>
                             )}
                           </div>

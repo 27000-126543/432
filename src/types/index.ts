@@ -101,6 +101,10 @@ export interface GridLine {
   lossRate: number
   lastReinforced: number
   repairTeams: string[]
+  baseLossRate?: number
+  temporaryLossRate?: number
+  eventAppliedLossRate?: number
+  displayStatus?: 'recovering' | 'normal' | 'damaged'
 }
 
 export interface GridEvent {
@@ -149,6 +153,8 @@ export interface Trade {
   timestamp: number
   regionId: string
   fee: number
+  buyOrderPrice?: number
+  sellOrderPrice?: number
 }
 
 export interface PriceHistory {

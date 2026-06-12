@@ -60,6 +60,8 @@ export const matchOrders = (buyOrders: Order[], sellOrders: Order[]): MatchResul
       timestamp: Date.now(),
       regionId: buy.id < sell.id ? buy.id : sell.id,
       fee,
+      buyOrderPrice: buy.price,
+      sellOrderPrice: sell.price,
     }
     
     trades.push(trade)

@@ -13,6 +13,7 @@ export const initializeGridLines = (): GridLine[] => {
       
       if (dist < 250) {
         const capacity = randomInt(5000, 20000)
+        const baseLoss = randomBetween(0.01, 0.05)
         lines.push({
           id: generateId('lin'),
           fromRegionId: r1.id,
@@ -22,9 +23,13 @@ export const initializeGridLines = (): GridLine[] => {
           status: 'normal',
           durability: randomBetween(0.7, 1.0),
           maxDurability: 1.0,
-          lossRate: randomBetween(0.01, 0.05),
+          lossRate: baseLoss,
           lastReinforced: Date.now(),
           repairTeams: [],
+          baseLossRate: baseLoss,
+          temporaryLossRate: 0,
+          eventAppliedLossRate: 0,
+          displayStatus: 'normal',
         })
       }
     }

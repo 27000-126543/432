@@ -39,6 +39,7 @@ export default function GuildPage() {
   const [contributeMaterials, setContributeMaterials] = useState<Record<string, number>>({})
   const [upgradeCountdown, setUpgradeCountdown] = useState<number>(0)
   const [selectedRegionIndex, setSelectedRegionIndex] = useState(0)
+  const [appointRoles, setAppointRoles] = useState<Record<string, 'vice_leader' | 'tech_officer' | 'member'>>({})
 
   const myGuild = useMemo(
     () => guilds.find((g) => g.id === currentPlayer.guildId) || null,
@@ -92,22 +93,24 @@ export default function GuildPage() {
   }
 
   const canApprove = useMemo(() => {
-    if (!myGuild || !upgradeProcess) return false
-    if (upgradeProcess.status !== 'approving') return false
+    if (!myGuild || !upgradeProcess) return null
+    if (upgradeProcess.status !== 'approving') return null
 
     const role = currentPlayer.guildRole
-    if (role === 'leader') return upgradeProcess.approvals.leader === 'pending'
-    if (role === 'vice_leader') {
-      return (
-        upgradeProcess.approvals.viceLeaders[currentPlayer.id] === 'pending'
-      )
+    if (role === 'leader' && upgradeProcess.approvals.leader === 'pending') {
+      return 'leader'
     }
-    if (role === 'tech_officer') {
-      return (
-        upgradeProcess.approvals.techOfficers[currentPlayer.id] === 'pending'
-      )
+    if (role === 'vice_leader' && myGuild.viceLeaders.includes(currentPlayer.id)) {
+      if (upgradeProcess.approvals.viceLeaders[currentPlayer.id] === 'pending') {
+        return 'viceLeader'
+      }
     }
-    return false
+    if (role === 'tech_officer' && myGuild.techOfficers.includes(currentPlayer.id)) {
+      if (upgradeProcess.approvals.techOfficers[currentPlayer.id] === 'pending') {
+        return 'techOfficer'
+      }
+    }
+    return null
   }, [myGuild, upgradeProcess, currentPlayer])
 
   const handleCreateGuild = () => {
@@ -129,14 +132,8 @@ export default function GuildPage() {
   }
 
   const handleApprove = (approve: boolean) => {
-    const roleMap: Record<string, 'leader' | 'viceLeader' | 'techOfficer'> = {
-      leader: 'leader',
-      vice_leader: 'viceLeader',
-      tech_officer: 'techOfficer',
-    }
-    const role = roleMap[currentPlayer.guildRole || '']
-    if (!role) return
-    actions.approveHubUpgrade(role, approve)
+    if (!canApprove) return
+    actions.approveHubUpgrade(canApprove, approve)
   }
 
   if (!myGuild) {
@@ -666,9 +663,27 @@ export default function GuildPage() {
                             <div className="text-xs text-amber-600">最终决策权</div>
                           </div>
                         </div>
-                        <span className={`px-3 py-1.5 rounded-lg text-sm font-semibold ${statusLabels[upgradeProcess.approvals.leader].color}`}>
-                          {statusLabels[upgradeProcess.approvals.leader].icon} {statusLabels[upgradeProcess.approvals.leader].label}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          {myRole === 'leader' && upgradeProcess.approvals.leader === 'pending' && (
+                            <div className="flex gap-2">
+                              <button
+                                onClick={() => handleApprove(true)}
+                                className="px-3 py-1.5 rounded-lg bg-emerald-500 text-white text-xs font-semibold hover:bg-emerald-600 transition-colors"
+                              >
+                                ✓ 通过
+                              </button>
+                              <button
+                                onClick={() => handleApprove(false)}
+                                className="px-3 py-1.5 rounded-lg bg-rose-500 text-white text-xs font-semibold hover:bg-rose-600 transition-colors"
+                              >
+                                ✗ 拒绝
+                              </button>
+                            </div>
+                          )}
+                          <span className={`px-3 py-1.5 rounded-lg text-sm font-semibold ${statusLabels[upgradeProcess.approvals.leader].color}`}>
+                            {statusLabels[upgradeProcess.approvals.leader].icon} {statusLabels[upgradeProcess.approvals.leader].label}
+                          </span>
+                        </div>
                       </div>
                     </div>
 
@@ -678,12 +693,34 @@ export default function GuildPage() {
                           <span className="text-xl">⚔️</span> 副会长审批
                           <span className="text-xs font-normal text-purple-600">
                             ({Object.keys(upgradeProcess.approvals.viceLeaders).length}人)
+                            {Object.keys(upgradeProcess.approvals.viceLeaders).length === 0 && (
+                              <span className="ml-1 text-purple-500">（无人担任，自动通过）</span>
+                            )}
                           </span>
                         </div>
+                        {myGuild && myGuild.viceLeaders.includes(currentPlayer.id) && upgradeProcess.approvals.viceLeaders[currentPlayer.id] === 'pending' && (
+                          <div className="flex gap-2 mb-3 pb-3 border-b border-purple-200">
+                            <button
+                              onClick={() => handleApprove(true)}
+                              className="px-3 py-1.5 rounded-lg bg-emerald-500 text-white text-xs font-semibold hover:bg-emerald-600 transition-colors"
+                            >
+                              ✓ 我批准
+                            </button>
+                            <button
+                              onClick={() => handleApprove(false)}
+                              className="px-3 py-1.5 rounded-lg bg-rose-500 text-white text-xs font-semibold hover:bg-rose-600 transition-colors"
+                            >
+                              ✗ 我拒绝
+                            </button>
+                          </div>
+                        )}
                         <div className="space-y-2">
                           {Object.entries(upgradeProcess.approvals.viceLeaders).map(([id, status]) => (
                             <div key={id} className="flex items-center justify-between text-sm">
-                              <span className="text-purple-700">玩家_{id.slice(-4)}</span>
+                              <span className="text-purple-700">
+                                玩家_{id.slice(-4)}
+                                {id === currentPlayer.id && <span className="ml-1 text-xs">(我)</span>}
+                              </span>
                               <span className={`px-2 py-0.5 rounded text-xs font-semibold ${statusLabels[status].color}`}>
                                 {statusLabels[status].icon} {statusLabels[status].label}
                               </span>
@@ -697,12 +734,34 @@ export default function GuildPage() {
                           <span className="text-xl">🔧</span> 技术官审批
                           <span className="text-xs font-normal text-cyan-600">
                             ({Object.keys(upgradeProcess.approvals.techOfficers).length}人)
+                            {Object.keys(upgradeProcess.approvals.techOfficers).length === 0 && (
+                              <span className="ml-1 text-cyan-500">（无人担任，自动通过）</span>
+                            )}
                           </span>
                         </div>
+                        {myGuild && myGuild.techOfficers.includes(currentPlayer.id) && upgradeProcess.approvals.techOfficers[currentPlayer.id] === 'pending' && (
+                          <div className="flex gap-2 mb-3 pb-3 border-b border-cyan-200">
+                            <button
+                              onClick={() => handleApprove(true)}
+                              className="px-3 py-1.5 rounded-lg bg-emerald-500 text-white text-xs font-semibold hover:bg-emerald-600 transition-colors"
+                            >
+                              ✓ 我批准
+                            </button>
+                            <button
+                              onClick={() => handleApprove(false)}
+                              className="px-3 py-1.5 rounded-lg bg-rose-500 text-white text-xs font-semibold hover:bg-rose-600 transition-colors"
+                            >
+                              ✗ 我拒绝
+                            </button>
+                          </div>
+                        )}
                         <div className="space-y-2">
                           {Object.entries(upgradeProcess.approvals.techOfficers).map(([id, status]) => (
                             <div key={id} className="flex items-center justify-between text-sm">
-                              <span className="text-cyan-700">玩家_{id.slice(-4)}</span>
+                              <span className="text-cyan-700">
+                                玩家_{id.slice(-4)}
+                                {id === currentPlayer.id && <span className="ml-1 text-xs">(我)</span>}
+                              </span>
                               <span className={`px-2 py-0.5 rounded text-xs font-semibold ${statusLabels[status].color}`}>
                                 {statusLabels[status].icon} {statusLabels[status].label}
                               </span>
@@ -711,23 +770,6 @@ export default function GuildPage() {
                         </div>
                       </div>
                     </div>
-
-                    {canApprove && (
-                      <div className="flex gap-3 pt-4 border-t border-slate-100">
-                        <button
-                          onClick={() => handleApprove(true)}
-                          className="flex-1 py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-green-600 text-white font-semibold hover:from-emerald-600 hover:to-green-700 transition-all shadow-lg shadow-emerald-200 active:scale-95"
-                        >
-                          ✓ 通过审批
-                        </button>
-                        <button
-                          onClick={() => handleApprove(false)}
-                          className="flex-1 py-3 rounded-xl bg-gradient-to-r from-rose-500 to-red-600 text-white font-semibold hover:from-rose-600 hover:to-red-700 transition-all shadow-lg shadow-rose-200 active:scale-95"
-                        >
-                          ✗ 拒绝
-                        </button>
-                      </div>
-                    )}
                   </div>
                 )}
 
@@ -792,6 +834,22 @@ export default function GuildPage() {
             <div className="space-y-2">
               {membersWithRoles.map((member) => {
                 const memberRoleInfo = roleLabels[member.role]
+                const isLeader = myRole === 'leader'
+                const isSelf = member.id === currentPlayer.id
+                const isLeaderMember = member.role === 'leader'
+                const canAppoint = isLeader && !isSelf && !isLeaderMember
+                const selectedRole = appointRoles[member.id] || member.role
+
+                const handleAppoint = () => {
+                  if (actions.appointMember(member.id, selectedRole)) {
+                    setAppointRoles((prev) => {
+                      const next = { ...prev }
+                      delete next[member.id]
+                      return next
+                    })
+                  }
+                }
+
                 return (
                   <div
                     key={member.id}
@@ -817,6 +875,31 @@ export default function GuildPage() {
                       <div className="text-xs text-slate-500 mt-0.5">
                         累计贡献：<span className="font-medium text-slate-700">{formatNumber(member.contribution)}</span>
                       </div>
+                      {canAppoint && (
+                        <div className="flex items-center gap-2 mt-2">
+                          <select
+                            value={selectedRole}
+                            onChange={(e) =>
+                              setAppointRoles((prev) => ({
+                                ...prev,
+                                [member.id]: e.target.value as 'vice_leader' | 'tech_officer' | 'member',
+                              }))
+                            }
+                            className="px-3 py-1.5 text-sm bg-slate-50 border border-slate-200 rounded-lg text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                          >
+                            <option value="member">👤 普通成员</option>
+                            <option value="vice_leader">⚔️ 副会长</option>
+                            <option value="tech_officer">🔧 技术官</option>
+                          </select>
+                          <button
+                            onClick={handleAppoint}
+                            disabled={selectedRole === member.role}
+                            className="px-3 py-1.5 text-sm rounded-lg bg-gradient-to-r from-indigo-500 to-purple-500 text-white font-medium hover:from-indigo-600 hover:to-purple-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            任命
+                          </button>
+                        </div>
+                      )}
                     </div>
                     <div className="text-right flex-shrink-0">
                       <div className="text-xs text-slate-400 mb-1">贡献排名</div>

@@ -131,10 +131,10 @@ export const approveUpgrade = (
   }
   
   const leaderApproved = updated.approvals.leader === 'approved'
-  const viceApproved = Object.values(updated.approvals.viceLeaders).length > 0 &&
-    Object.values(updated.approvals.viceLeaders).every(s => s === 'approved')
-  const techApproved = Object.values(updated.approvals.techOfficers).length > 0 &&
-    Object.values(updated.approvals.techOfficers).every(s => s === 'approved')
+  const hasVice = Object.keys(updated.approvals.viceLeaders).length > 0
+  const viceApproved = !hasVice || Object.values(updated.approvals.viceLeaders).every(s => s === 'approved')
+  const hasTech = Object.keys(updated.approvals.techOfficers).length > 0
+  const techApproved = !hasTech || Object.values(updated.approvals.techOfficers).every(s => s === 'approved')
   
   const allApproved = leaderApproved && viceApproved && techApproved
   

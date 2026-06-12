@@ -38,10 +38,22 @@ export interface PDFReportData {
     supplyDemandChart?: string
     radarChart?: string
   }
-  guildInfo?: {
-    guild: { id: string; name: string; level: number; memberCount: number }
-    role: string | null
-  }
+  guild?: {
+    name: string
+    emblem: string
+    level: number
+    memberRole: string
+    memberCount: number
+    gold: number
+    materials: Record<string, number>
+    hub?: {
+      level: number
+      name: string
+      coverageRadius: number
+      totalOutput: number
+      upgradeStatus?: string
+    }
+  } | null
   options?: {
     playerInfo?: boolean
     summary?: boolean
@@ -276,6 +288,75 @@ export const generateEnergyReport = async (
     })
     drawTable(doc, tradeData, 15, y, pageWidth - 30)
     y += (tradeData.length + 1) * 7 + 8
+  }
+  
+  if (opts.guild) {
+    if (y > pageHeight - 60) { doc.addPage(); y = 15 }
+    doc.setFontSize(14)
+    doc.setFont('helvetica', 'bold')
+    doc.setTextColor(0, 0, 0)
+    doc.text('八、公会信息', 15, y)
+    y += 8
+
+    if (!data.guild) {
+      doc.setFontSize(11)
+      doc.setFont('helvetica', 'normal')
+      doc.setTextColor(120, 120, 120)
+      doc.text('您当前未加入任何公会。创建或加入公会后可享受：', 15, y)
+      y += 6
+      doc.text('  · 公会效率加成（最高 +50% 发电效率）', 15, y); y += 6
+      doc.text('  · 交易手续费折扣（最高 -30%）', 15, y); y += 6
+      doc.text('  · 联合建造超级能源枢纽，扩大电网覆盖范围', 15, y); y += 6
+      doc.text('  · 成员贡献材料，获得公会排名荣誉', 15, y); y += 6
+    } else {
+      const g = data.guild
+      doc.setFontSize(11)
+      doc.setFont('helvetica', 'bold')
+      doc.text(`公会名称：${g.emblem} ${g.name}`, 15, y); y += 6
+      doc.setFont('helvetica', 'normal')
+      doc.text(`公会等级：Lv.${g.level}`, 15, y); y += 6
+      doc.text(`您的身份：${g.memberRole}`, 15, y); y += 6
+      doc.text(`成员数量：${g.memberCount} 人`, 15, y); y += 6
+      doc.text(`公会金库：${g.gold.toLocaleString()} 金币`, 15, y); y += 6
+      
+      y += 2
+      doc.setFont('helvetica', 'bold')
+      doc.text('材料库存：', 15, y); y += 6
+      doc.setFont('helvetica', 'normal')
+      const matMap: Record<string, string> = {
+        mana_crystal: '💎 魔力水晶',
+        arcane_core: '🔮 奥术核心',
+        dragon_scale: '🐉 龙鳞',
+      }
+      for (const [k, label] of Object.entries(matMap)) {
+        const v = g.materials[k] || 0
+        doc.text(`  ${label}：${v.toLocaleString()}`, 15, y); y += 6
+      }
+      
+      if (g.hub) {
+        y += 2
+        doc.setFont('helvetica', 'bold')
+        doc.text('超级能源枢纽：', 15, y); y += 6
+        doc.setFont('helvetica', 'normal')
+        doc.text(`  名称：${g.hub.name}`, 15, y); y += 6
+        doc.text(`  等级：Lv.${g.hub.level}`, 15, y); y += 6
+        doc.text(`  总输出：${g.hub.totalOutput.toLocaleString()} 魔力/时`, 15, y); y += 6
+        doc.text(`  覆盖范围：${g.hub.coverageRadius} km`, 15, y); y += 6
+        if (g.hub.upgradeStatus) {
+          doc.setFont('helvetica', 'bold')
+          doc.setTextColor(168, 85, 247)
+          doc.text(`  升级状态：${g.hub.upgradeStatus}`, 15, y); y += 6
+          doc.setTextColor(0, 0, 0)
+        }
+      } else {
+        y += 2
+        doc.setFont('helvetica', 'italic')
+        doc.setTextColor(120, 120, 120)
+        doc.text('超级能源枢纽：尚未建造（需公会金库 500,000 金币）', 15, y); y += 6
+        doc.setTextColor(0, 0, 0)
+      }
+    }
+    y += 4
   }
   
   doc.setDrawColor(168, 85, 247)

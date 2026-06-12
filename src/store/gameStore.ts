@@ -137,7 +137,7 @@ interface GameState {
     createGuild: (name: string) => void
     contributeToGuild: (gold: number, materials: Record<string, number>) => void
     requestHubUpgrade: () => void
-    approveHubUpgrade: (role: 'leader' | 'viceLeader' | 'techOfficer', approve: boolean) => void
+    approveHubUpgrade: (role: 'leader' | 'viceLeader' | 'techOfficer', approve: boolean, asMemberId?: string) => void
     buildHub: (regionIndex: number) => boolean
     appointMember: (memberId: string, role: 'vice_leader' | 'tech_officer' | 'member') => boolean
     addTestMember: (role: 'vice_leader' | 'tech_officer' | 'member') => boolean
@@ -1158,7 +1158,7 @@ export const useGameStore = create<GameState>((set, get) => {
         set({ guilds })
       },
       
-      approveHubUpgrade: (role, approve) => {
+      approveHubUpgrade: (role, approve, asMemberId) => {
         const state = get()
         const player = state.currentPlayer
         if (!player.guildId) return
@@ -1166,16 +1166,28 @@ export const useGameStore = create<GameState>((set, get) => {
         const guild = state.guilds.find(g => g.id === player.guildId)
         if (!guild?.hub?.upgradeProcess) return
         
+        // 使用 asMemberId 审批（会长代批测试成员）或使用自己id
+        const approverId = (asMemberId && player.guildRole === 'leader') ? asMemberId : player.id
+        
+        // 权限校验：自己审批自己的没问题；如果是代批必须是会长且asMemberId在对应角色列表里
+        if (asMemberId && player.guildRole === 'leader') {
+          const ok =
+            (role === 'viceLeader' && guild.viceLeaders.includes(asMemberId)) ||
+            (role === 'techOfficer' && guild.techOfficers.includes(asMemberId))
+          if (!ok) {
+            get().actions.addNotification({ type: 'error', title: '审批失败', message: '代批成员不属于该角色' })
+            return
+          }
+        }
+        
         const { process: updatedProcess, allApproved } = approveUpgrade(
           guild.hub.upgradeProcess,
           role,
-          player.id,
+          approverId,
           approve ? 'approved' : 'rejected'
         )
         
-        // 审批通过后，进入 upgrading 阶段，保留 upgradeProcess（带 completeTime）
-        // 升级完成由 tick() 里倒计时结束自动 complete
-        const effectiveHub = allApproved ? { ...guild.hub, upgradeProcess: updatedProcess } : { ...guild.hub, upgradeProcess: updatedProcess }
+        const effectiveHub = { ...guild.hub, upgradeProcess: updatedProcess }
         const guildBonus = calculateGuildBonus({ ...guild, hub: effectiveHub })
         
         const guilds = state.guilds.map(g => {
@@ -1201,6 +1213,14 @@ export const useGameStore = create<GameState>((set, get) => {
             type: 'success',
             title: '✅ 全部审批通过',
             message: `超级能源枢纽开始升级，预计 ${remain} 秒后完成`,
+          })
+        } else {
+          get().actions.addNotification({
+            type: approve ? 'success' : 'warning',
+            title: approve ? '审批通过' : '审批拒绝',
+            message: asMemberId
+              ? `已代 ${role === 'viceLeader' ? '副会长' : '技术官'} 成员${approve ? '批准' : '拒绝'}升级`
+              : `您已${approve ? '批准' : '拒绝'}枢纽升级申请`,
           })
         }
       },

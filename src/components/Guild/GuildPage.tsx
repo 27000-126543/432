@@ -110,6 +110,18 @@ export default function GuildPage() {
         return 'techOfficer'
       }
     }
+    // 会长兼任技术官时，检查本人在技术官审批列表的状态
+    if (role === 'leader' && myGuild.techOfficers.includes(currentPlayer.id)) {
+      if (upgradeProcess.approvals.techOfficers[currentPlayer.id] === 'pending') {
+        return 'techOfficer'
+      }
+    }
+    // 会长兼任副会长时，检查本人在副会长审批列表的状态
+    if (role === 'leader' && myGuild.viceLeaders.includes(currentPlayer.id)) {
+      if (upgradeProcess.approvals.viceLeaders[currentPlayer.id] === 'pending') {
+        return 'viceLeader'
+      }
+    }
     return null
   }, [myGuild, upgradeProcess, currentPlayer])
 
@@ -131,9 +143,14 @@ export default function GuildPage() {
     setContributeMaterials({})
   }
 
-  const handleApprove = (approve: boolean) => {
-    if (!canApprove) return
-    actions.approveHubUpgrade(canApprove, approve)
+  const handleApprove = (approve: boolean, asMemberId?: string) => {
+    if (!canApprove && !asMemberId) return
+    if (asMemberId && myRole !== 'leader') return
+    const approverRole = asMemberId
+      ? (myGuild.viceLeaders.includes(asMemberId) ? 'viceLeader' : myGuild.techOfficers.includes(asMemberId) ? 'techOfficer' : 'leader')
+      : canApprove
+    if (!approverRole) return
+    actions.approveHubUpgrade(approverRole as 'leader' | 'viceLeader' | 'techOfficer', approve, asMemberId)
   }
 
   if (!myGuild) {
@@ -441,7 +458,7 @@ export default function GuildPage() {
                       Lv.{myGuild.hub.level}
                     </span>
                   </h3>
-                  {myRole === 'tech_officer' && !upgradeProcess && nextLevelCost && (
+                  {myGuild.techOfficers.includes(currentPlayer.id) && !upgradeProcess && nextLevelCost && (
                     <button
                       onClick={() => actions.requestHubUpgrade()}
                       className="px-4 py-2 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-semibold hover:from-cyan-600 hover:to-blue-700 transition-all shadow-lg shadow-cyan-200 active:scale-95"
@@ -723,9 +740,29 @@ export default function GuildPage() {
                                 玩家_{id.slice(-4)}
                                 {id === currentPlayer.id && <span className="ml-1 text-xs">(我)</span>}
                               </span>
-                              <span className={`px-2 py-0.5 rounded text-xs font-semibold ${statusLabels[status].color}`}>
-                                {statusLabels[status].icon} {statusLabels[status].label}
-                              </span>
+                              <div className="flex items-center gap-2">
+                                {status === 'pending' && myRole === 'leader' && id !== currentPlayer.id && (
+                                  <div className="flex gap-1">
+                                    <button
+                                      onClick={() => handleApprove(true, id)}
+                                      className="px-2 py-0.5 rounded bg-emerald-500 text-white text-[10px] font-semibold hover:bg-emerald-600 transition-colors"
+                                      title="会长代该副会长审批通过"
+                                    >
+                                      ✓ 代批
+                                    </button>
+                                    <button
+                                      onClick={() => handleApprove(false, id)}
+                                      className="px-2 py-0.5 rounded bg-rose-500 text-white text-[10px] font-semibold hover:bg-rose-600 transition-colors"
+                                      title="会长代该副会长审批拒绝"
+                                    >
+                                      ✗ 代拒
+                                    </button>
+                                  </div>
+                                )}
+                                <span className={`px-2 py-0.5 rounded text-xs font-semibold ${statusLabels[status].color}`}>
+                                  {statusLabels[status].icon} {statusLabels[status].label}
+                                </span>
+                              </div>
                             </div>
                           ))}
                         </div>
@@ -766,9 +803,29 @@ export default function GuildPage() {
                                 玩家_{id.slice(-4)}
                                 {id === currentPlayer.id && <span className="ml-1 text-xs">(我)</span>}
                               </span>
-                              <span className={`px-2 py-0.5 rounded text-xs font-semibold ${statusLabels[status].color}`}>
-                                {statusLabels[status].icon} {statusLabels[status].label}
-                              </span>
+                              <div className="flex items-center gap-2">
+                                {status === 'pending' && myRole === 'leader' && id !== currentPlayer.id && (
+                                  <div className="flex gap-1">
+                                    <button
+                                      onClick={() => handleApprove(true, id)}
+                                      className="px-2 py-0.5 rounded bg-emerald-500 text-white text-[10px] font-semibold hover:bg-emerald-600 transition-colors"
+                                      title="会长代该技术官审批通过"
+                                    >
+                                      ✓ 代批
+                                    </button>
+                                    <button
+                                      onClick={() => handleApprove(false, id)}
+                                      className="px-2 py-0.5 rounded bg-rose-500 text-white text-[10px] font-semibold hover:bg-rose-600 transition-colors"
+                                      title="会长代该技术官审批拒绝"
+                                    >
+                                      ✗ 代拒
+                                    </button>
+                                  </div>
+                                )}
+                                <span className={`px-2 py-0.5 rounded text-xs font-semibold ${statusLabels[status].color}`}>
+                                  {statusLabels[status].icon} {statusLabels[status].label}
+                                </span>
+                              </div>
                             </div>
                           ))}
                         </div>
@@ -792,7 +849,7 @@ export default function GuildPage() {
                           strokeLinecap="round"
                           strokeDasharray="283"
                           style={{
-                            strokeDashoffset: 283 * (1 - Math.min(1, upgradeCountdown / (1000 * 60 * 30))),
+                            strokeDashoffset: 283 * Math.min(1, Math.max(0, upgradeCountdown / Math.max(1, (upgradeProcess.completeTime || 0) - (upgradeProcess.startTime || 0)))),
                             transition: 'stroke-dashoffset 1s linear',
                           }}
                         />
